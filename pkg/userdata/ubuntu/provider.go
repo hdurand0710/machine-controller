@@ -388,4 +388,7 @@ write_files:
 
 runcmd:
 - systemctl start setup.service
+{{- if eq .CloudProviderName "kubevirt" }}
+- dhclient
+{{- end }}
 `

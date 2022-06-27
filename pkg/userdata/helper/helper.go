@@ -164,7 +164,7 @@ echodate() {
 }
 
 # get the default interface IP address
-DEFAULT_IFC_IP=$(ip -o  route get 1 | grep -oP "src \K\S+")
+DEFAULT_IFC_IP=$(ip -o addr show eth0 | grep -oP "inet \K[\d.]+")
 
 # get the full hostname
 FULL_HOSTNAME=$(hostname -f)

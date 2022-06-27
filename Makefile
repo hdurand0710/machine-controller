@@ -17,6 +17,8 @@ SHELL = /bin/bash -eu -o pipefail
 GO_VERSION ?= 1.18.2
 
 GOOS ?= $(shell go env GOOS)
+#HELENE
+GOOS=linux
 
 export CGO_ENABLED := 0
 
@@ -28,6 +30,8 @@ export GOFLAGS?=-mod=readonly -trimpath
 
 REGISTRY ?= quay.io
 REGISTRY_NAMESPACE ?= kubermatic
+#HELENE
+REGISTRY_NAMESPACE=hdurand0710
 
 LDFLAGS ?= -ldflags '-s -w'
 

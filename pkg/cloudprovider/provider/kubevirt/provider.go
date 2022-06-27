@@ -101,6 +101,7 @@ type Config struct {
 	PodAffinityPreset     AffinityType
 	PodAntiAffinityPreset AffinityType
 	NodeAffinityPreset    NodeAffinityPreset
+	AdditionalNetworks    []AdditionalNetwork
 }
 
 type AffinityType string
@@ -130,6 +131,11 @@ func (p *provider) affinityType(affinityType providerconfigtypes.ConfigVarString
 	}
 
 	return "", fmt.Errorf("unknown affinityType: %s", affinityType)
+}
+
+// AdditionalNetwork
+type AdditionalNetwork struct {
+	Name string
 }
 
 // NodeAffinityPreset.
@@ -310,6 +316,15 @@ func (p *provider) getConfig(provSpec clusterv1alpha1.ProviderSpec) (*Config, *p
 	config.NodeAffinityPreset, err = p.parseNodeAffinityPreset(rawConfig.Affinity.NodeAffinityPreset)
 	if err != nil {
 		return nil, nil, fmt.Errorf(`failed to parse "nodeAffinityPreset" field: %w`, err)
+	}
+
+	config.AdditionalNetworks = make([]AdditionalNetwork, 0)
+	for _, an := range rawConfig.VirtualMachine.AdditionalNetworks {
+		networkName, err := p.configVarResolver.GetConfigVarStringValue(an.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf(`failed to parse "networkName" field: %w`, err)
+		}
+		config.AdditionalNetworks = append(config.AdditionalNetworks, AdditionalNetwork{Name: networkName})
 	}
 
 	return &config, pconfig, nil
@@ -554,13 +569,11 @@ func (p *provider) Create(ctx context.Context, machine *clusterv1alpha1.Machine,
 					Labels:      labels,
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
-					Networks: []kubevirtv1.Network{
-						*kubevirtv1.DefaultPodNetwork(),
-					},
+					Networks: getNetworks(c),
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
 							Disks:      getVMDisks(c),
-							Interfaces: []kubevirtv1.Interface{*defaultBridgeNetwork},
+							Interfaces: getInterfaces(c, defaultBridgeNetwork),
 						},
 						Resources: resourceRequirements,
 					},
@@ -773,6 +786,40 @@ func getDataVolumeSource(osImage OSImage) *cdiv1beta1.DataVolumeSource {
 		}
 	}
 	return dataVolumeSource
+}
+
+func getInterfaces(config *Config, defaultBridgeNetwork *kubevirtv1.Interface) []kubevirtv1.Interface {
+	//additionalInterfaces := []kubevirtv1.Interface{*defaultBridgeNetwork}
+	additionalInterfaces := []kubevirtv1.Interface{}
+	for i, _ := range config.AdditionalNetworks {
+		additionalInterfaces = append(additionalInterfaces, kubevirtv1.Interface{
+			Name: fmt.Sprintf("vlan-%d", i),
+			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+				Bridge: &kubevirtv1.InterfaceBridge{},
+			},
+		})
+	}
+	additionalInterfaces = append(additionalInterfaces, *defaultBridgeNetwork)
+	return additionalInterfaces
+}
+
+func getNetworks(config *Config) []kubevirtv1.Network {
+	// networks := []kubevirtv1.Network{
+	// 	*kubevirtv1.DefaultPodNetwork(),
+	// }
+	networks := []kubevirtv1.Network{}
+	for i, an := range config.AdditionalNetworks {
+		networks = append(networks, kubevirtv1.Network{
+			Name: fmt.Sprintf("vlan-%d", i),
+			NetworkSource: kubevirtv1.NetworkSource{
+				Multus: &kubevirtv1.MultusNetwork{
+					NetworkName: an.Name,
+				},
+			},
+		})
+	}
+	networks = append(networks, *kubevirtv1.DefaultPodNetwork())
+	return networks
 }
 
 func getAffinity(config *Config, matchKey, matchValue string) *corev1.Affinity {
